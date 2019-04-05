@@ -58,6 +58,11 @@ function [transformedcloud, pixelWidth] =  planarReorient(ptcloud,samples)
     finalTrans = finalTrans*zRot;
     
     transformedcloud = pctransform(ptcloud,affine3d(finalTrans));
+    %Recenter the resulting cloud
+    newXYctr = [sum(transformedcloud.XLimits), sum(transformedcloud.YLimits)];
+    newXYctr = [-newXYctr/2,0];
+    transformedcloud = pctransform(transformedcloud, ...
+        affine3d(transpose(makehgtform('translate',newXYctr))));
     
     %Calculate the raster pixel spacing from the projected scan data
     spaces = samplePointSpacing(double(transformedcloud.Location));
