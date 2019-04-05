@@ -67,11 +67,13 @@ function [faceCL,scanCL] = mapCenterLine(img,rot)
     fcMaskY(~faceMask) = 0; imMaskY(~iMask) = 0;
     %Set up the sample points for modeling the center line
     xpos = ceil(width/2:width:imgSz(1)-width/2);
-    ypos = zeros(1,length(xpos)); lnum = length(xpos);
+    ypos = ceil(0.5*(imgSz(2)+1))*ones(1,length(xpos));
+    lnum = length(xpos);
     for i=1:lnum
         xidx = max(xpos(i)-width,1):min(xpos(i)+width,imgSz(1));
-        ypos(i) = mean( [nonzeros(imMaskY(xidx,:)); ...
-            repmat(nonzeros(fcMaskY(xidx,:)),2,1)] );
+        yptmp = [ nonzeros(imMaskY(xidx,:)); ...
+            repmat(nonzeros(fcMaskY(xidx,:)),2,1)];
+        if ~isempty(yptmp), ypos(i) = mean(yptmp); end
     end
     %Smooth initial y positions estimated from the scan
     yshift = median(ypos); %Shift to preserve median center at edges
@@ -79,7 +81,7 @@ function [faceCL,scanCL] = mapCenterLine(img,rot)
     for i=1:lnum, ypos(i) = mean(ysm(max(i-5,1):min(i+5,lnum))); end
     
     %Calculate depths at the resulting y positions
-    faceDctr = ypos; scanDctr = ypos;
+    faceDctr = zeros(size(ypos)); scanDctr = faceDctr;
     for i=1:lnum
         xidx = max(xpos(i)-width,1):min(xpos(i)+width,imgSz(1));
         yps = round(ypos(i));
@@ -109,12 +111,21 @@ function [faceCL,scanCL] = mapCenterLine(img,rot)
             wts = wts.*sqrt(max(1-wtB/max(wtB),0)).^4;
             ptY = ptY(wts>0); ptD = ptD(wts>0); wts = wts(wts>0);
         end
-        pvals = [ptY.*wts, wts] \ (ptD.*wts);
-        scanDctr(i) = max(pvals(1)*yps + pvals(2), mean(ptD(ptD<0)));
+        scanDctr(i) = faceDctr(i);
+        if ~isempty(wts) && max(wts) > eps
+            wts = wts/max(wts);
+            pvals = [ptY.*wts, wts] \ (ptD.*wts);
+            scanDctr(i) = max(pvals(1)*yps + pvals(2), mean(ptD(ptD<0)));
+        end
         if faceDctr(i)<scanDctr(i), faceDctr(i) = scanDctr(i); end
     end
     faceCL = iPixD*interp1(xpos,faceDctr,1:imgSz(1),'linear','extrap');
     scanCL = iPixD*interp1(xpos,scanDctr,1:imgSz(1),'linear','extrap');
+    
+    %Clamp restored values within the depth range of the data
+    minD = min(iDepth(:)); maxD = max(iDepth(:));
+    faceCL(faceCL<minD) = minD; faceCL(faceCL>maxD) = maxD;
+    scanCL(scanCL<minD) = minD; scanCL(scanCL>maxD) = maxD;
 end
 
 function [faceDs,faceNs] = restoreFace(imSeg,imgD,imgN,imgAO,incisPx)
